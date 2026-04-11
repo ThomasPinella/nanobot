@@ -126,17 +126,54 @@ verify() {
     export PATH="$UV_BIN_DIR:$PATH"
 
     if ! command -v hazel &>/dev/null; then
-        warn "'hazel' command not found on PATH."
-        warn "Add this to your shell profile (~/.bashrc or ~/.zshrc):"
-        echo ""
-        echo "  export PATH=\"$UV_BIN_DIR:\$PATH\""
-        echo ""
-        warn "Then restart your shell or run: source ~/.bashrc"
+        error "'hazel' binary not found even after updating PATH. Something went wrong."
         return 1
     fi
 
+    # Ensure the bin dir is in the user's shell profile so `hazel` works in new shells
+    ensure_on_path "$UV_BIN_DIR"
+
     HAZEL_VERSION_STR=$(hazel --version 2>/dev/null || echo "unknown")
     info "Hazel installed successfully! ($HAZEL_VERSION_STR)"
+}
+
+# ---------------------------------------------------------------------------
+# Ensure a directory is on PATH permanently via shell profile
+# ---------------------------------------------------------------------------
+ensure_on_path() {
+    local bin_dir="$1"
+    local path_line="export PATH=\"$bin_dir:\$PATH\""
+
+    # Already on PATH in a fresh login shell — nothing to do
+    if bash -lc 'echo ":$PATH:"' 2>/dev/null | grep -q ":$bin_dir:"; then
+        return 0
+    fi
+
+    # Find the right shell profile
+    local profile=""
+    local current_shell
+    current_shell="$(basename "${SHELL:-/bin/bash}")"
+    case "$current_shell" in
+        zsh)  profile="$HOME/.zshrc" ;;
+        bash)
+            if [[ -f "$HOME/.bashrc" ]]; then
+                profile="$HOME/.bashrc"
+            else
+                profile="$HOME/.profile"
+            fi
+            ;;
+        *)    profile="$HOME/.profile" ;;
+    esac
+
+    # Don't add it twice
+    if [[ -f "$profile" ]] && grep -qF "$bin_dir" "$profile" 2>/dev/null; then
+        return 0
+    fi
+
+    info "Adding $bin_dir to PATH in $profile"
+    echo "" >> "$profile"
+    echo "# Added by Hazel installer" >> "$profile"
+    echo "$path_line" >> "$profile"
 }
 
 # ---------------------------------------------------------------------------
