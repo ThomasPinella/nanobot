@@ -24,6 +24,13 @@ CANVAS_DIR = Path(__file__).parent.parent / "canvas"
 SERVER_SCRIPT = CANVAS_DIR / "dashboard-server.js"
 DASHBOARD_HTML = CANVAS_DIR / "dashboard.html"
 
+# Skip the entire module if canvas node_modules aren't installed
+_has_node_modules = (CANVAS_DIR / "node_modules" / "better-sqlite3").is_dir()
+pytestmark = pytest.mark.skipif(
+    not _has_node_modules,
+    reason="canvas node_modules not installed (run: cd canvas && npm install)",
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
