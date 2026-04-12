@@ -6,9 +6,10 @@
 #
 # What this does:
 #   1. Installs uv (Python package manager) if not present
-#   2. Finds the latest Hazel release on GitHub
-#   3. Installs Hazel via uv tool install
-#   4. Verifies the `hazel` command is available
+#   2. Installs Node.js if not present (needed for the dashboard)
+#   3. Finds the latest Hazel release on GitHub
+#   4. Installs Hazel via uv tool install
+#   5. Verifies the `hazel` command is available
 #
 # Environment variables (optional):
 #   HAZEL_VERSION    — install a specific version tag (e.g. "v0.1.4"), default: latest
@@ -67,7 +68,51 @@ install_uv() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2: Find the wheel URL from GitHub Releases
+# Step 2: Ensure Node.js is installed (needed for the dashboard)
+# ---------------------------------------------------------------------------
+install_node() {
+    if command -v node &>/dev/null; then
+        NODE_VERSION=$(node --version 2>/dev/null)
+        info "Node.js already installed ($NODE_VERSION)"
+        return 0
+    fi
+
+    info "Installing Node.js (needed for the dashboard)..."
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS — use the official installer script via Homebrew or fnm
+        if command -v brew &>/dev/null; then
+            brew install node
+        else
+            curl -fsSL https://fnm.vercel.app/install | bash
+            export PATH="$HOME/.local/share/fnm:$PATH"
+            eval "$(fnm env)" 2>/dev/null
+            fnm install --lts
+        fi
+    elif [[ "$(uname)" == "Linux" ]]; then
+        if command -v apt-get &>/dev/null; then
+            curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+        elif command -v dnf &>/dev/null; then
+            curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+            sudo dnf install -y nodejs
+        else
+            warn "Could not auto-install Node.js (unknown package manager)."
+            warn "Install Node.js manually: https://nodejs.org/"
+            return 1
+        fi
+    fi
+
+    if command -v node &>/dev/null; then
+        info "Node.js installed successfully ($(node --version))"
+    else
+        warn "Node.js installation may have failed. The dashboard won't be available."
+        warn "Install manually: https://nodejs.org/"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Step 3: Find the wheel URL from GitHub Releases
 # ---------------------------------------------------------------------------
 find_wheel_url() {
     if [[ -n "$VERSION" ]]; then
@@ -105,7 +150,7 @@ find_wheel_url() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3: Install Hazel
+# Step 4: Install Hazel
 # ---------------------------------------------------------------------------
 install_hazel() {
     # Check if already installed
@@ -119,7 +164,7 @@ install_hazel() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4: Verify installation
+# Step 5: Verify installation
 # ---------------------------------------------------------------------------
 verify() {
     UV_BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
@@ -191,6 +236,8 @@ main() {
     echo ""
 
     install_uv
+    echo ""
+    install_node || true  # non-fatal — dashboard is optional
     echo ""
     find_wheel_url
     echo ""

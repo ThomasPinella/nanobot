@@ -410,7 +410,9 @@ def _setup_dashboard(config: Config) -> None:
     npm = shutil.which("npm")
     if not node or not npm:
         console.print("[yellow]![/yellow] Node.js not found — skipping dashboard setup.")
-        console.print("  Install Node.js and re-run [cyan]hazel onboard[/cyan] to enable the dashboard.")
+        console.print("  To enable the dashboard later:")
+        console.print("    1. Install Node.js: [cyan]curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs[/cyan]")
+        console.print("    2. Re-run: [cyan]hazel onboard[/cyan]  (your config will be preserved)")
         return
 
     # Resolve canvas source dir (bundled in package at hazel/canvas/)
