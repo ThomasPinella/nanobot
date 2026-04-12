@@ -1382,6 +1382,12 @@ def update(
     release_tag = release.get("tag_name", "unknown")
     console.print(f"[dim]Latest version: {release_tag}[/dim]\n")
 
+    # Clean up any broken leftover environment (uv chokes on corrupt venvs)
+    tool_env = Path.home() / ".local" / "share" / "uv" / "tools" / "hazel-ai"
+    if tool_env.is_dir():
+        import shutil as _shutil
+        _shutil.rmtree(tool_env, ignore_errors=True)
+
     # Upgrade in-place (don't uninstall first — if reinstall fails, we'd lose the binary)
     result = subprocess.run(
         [uv, "tool", "install", "--force", f"hazel-ai @ {wheel_url}"],
