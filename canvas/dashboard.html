@@ -1933,11 +1933,51 @@
     <div id="panel-content"></div>
   </div>
 
+  <div id="session-expired-overlay" style="display:none; position:fixed; inset:0; z-index:99999;
+    background:rgba(15,15,26,0.95); align-items:center; justify-content:center; font-family:inherit;">
+    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #2a2a4a;
+      border-radius:16px; padding:48px; max-width:440px; text-align:center;">
+      <div style="font-size:48px; margin-bottom:16px;">&#x1f512;</div>
+      <h2 style="color:#e94560; margin-bottom:12px;">Session Expired</h2>
+      <p style="color:#a0a0c0; line-height:1.6;">Your dashboard session has expired.</p>
+      <div style="margin-top:24px; padding:16px; background:rgba(233,69,96,0.08);
+        border:1px solid rgba(233,69,96,0.2); border-radius:8px; color:#e0e0e0; font-size:14px;">
+        Ask Hazel for a new link:<br>
+        <code style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px;">
+          "Give me a dashboard link"</code>
+      </div>
+    </div>
+  </div>
+
   <script>
+    // Clean token from URL bar (prevent it lingering in history/bookmarks)
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('token')) {
+        params.delete('token');
+        const clean = params.toString();
+        const newUrl = window.location.pathname + (clean ? '?' + clean : '');
+        window.history.replaceState({}, '', newUrl);
+      }
+    })();
+
+    // Wrap fetch to detect 401 (expired session) and show overlay
+    (function() {
+      const _origFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const response = await _origFetch(...args);
+        if (response.status === 401) {
+          const overlay = document.getElementById('session-expired-overlay');
+          if (overlay) overlay.style.display = 'flex';
+        }
+        return response;
+      };
+    })();
+
     // ==========================================
     // SHARED STATE & UTILITIES
     // ==========================================
-    
+
     const API_BASE = window.location.origin;
     let currentTab = 'entities';
     let panelMode = null; // 'entity' or 'intent'

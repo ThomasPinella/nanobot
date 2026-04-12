@@ -93,7 +93,10 @@ class DashboardConfig(Base):
     """Canvas dashboard configuration."""
 
     enabled: bool = True
+    host: str = "127.0.0.1"  # Listen address (use 0.0.0.0 for remote access with auth)
     port: int = 8081
+    base_url: str = ""  # Public URL for link generation (e.g. "http://myserver:8081"); auto-constructed from host:port if empty
+    token_ttl_minutes: int = 60  # How long dashboard_link tokens are valid
 
 
 class GatewayConfig(Base):

@@ -17,6 +17,7 @@ from hazel.agent.context import ContextBuilder
 from hazel.agent.memory import MemoryConsolidator
 from hazel.agent.subagent import SubagentManager
 from hazel.agent.tools.cron import CronTool
+from hazel.agent.tools.dashboard import DashboardLinkTool
 from hazel.agent.tools.entity import QueryChangesTool, RecordChangeTool, RetrieveEntitiesTool
 from hazel.agent.tools.intents import (
     IntentCompleteTool,
@@ -42,7 +43,7 @@ from hazel.providers.base import LLMProvider
 from hazel.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from hazel.config.schema import ChannelsConfig, ExecToolConfig, WebSearchConfig
+    from hazel.config.schema import ChannelsConfig, DashboardConfig, ExecToolConfig, WebSearchConfig
     from hazel.cron.service import CronService
 
 
@@ -76,8 +77,9 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        dashboard_config: DashboardConfig | None = None,
     ):
-        from hazel.config.schema import ExecToolConfig, WebSearchConfig
+        from hazel.config.schema import DashboardConfig, ExecToolConfig, WebSearchConfig
 
         self.bus = bus
         self.channels_config = channels_config
@@ -91,6 +93,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.dashboard_config = dashboard_config or DashboardConfig()
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
@@ -150,6 +153,15 @@ class AgentLoop:
         self.tools.register(RetrieveEntitiesTool(
             workspace=self.workspace, provider=self.provider, model=self.model,
         ))
+        # Dashboard link tool
+        dc = self.dashboard_config
+        if dc.enabled:
+            self.tools.register(DashboardLinkTool(
+                dashboard_host=dc.host,
+                dashboard_port=dc.port,
+                dashboard_base_url=dc.base_url,
+                token_ttl_minutes=dc.token_ttl_minutes,
+            ))
         # Intent tools (task/reminder/event/followup management)
         for cls in (
             IntentCreateTool, IntentUpdateTool, IntentGetTool, IntentSearchTool,

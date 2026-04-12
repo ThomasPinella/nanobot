@@ -458,8 +458,14 @@ def _setup_dashboard(config: Config) -> None:
             return
         console.print("[green]\u2713[/green] Dashboard dependencies installed")
 
+    # Generate dashboard auth secret if it doesn't exist
+    from hazel.agent.tools.dashboard import get_or_create_secret
+    get_or_create_secret()
+    console.print("[green]\u2713[/green] Dashboard auth secret ready")
+
     # Set up systemd user service
     port = dashboard_cfg.port
+    host = dashboard_cfg.host
     systemd_dir = Path.home() / ".config" / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     service_path = systemd_dir / "hazel-dashboard.service"
@@ -475,6 +481,7 @@ Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=DASHBOARD_PORT={port}
+Environment=DASHBOARD_HOST={host}
 
 [Install]
 WantedBy=default.target
@@ -671,6 +678,7 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        dashboard_config=config.gateway.dashboard,
     )
 
     # Set cron callback (needs agent)
@@ -938,6 +946,7 @@ def agent(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        dashboard_config=config.gateway.dashboard,
     )
 
     # Shared reference for progress callbacks
