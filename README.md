@@ -92,9 +92,9 @@ hazel gateway
 
 ## Detailed Documentation
 
-🐈 **Hazel** is an **ultra-lightweight** personal AI assistant inspired by [OpenClaw](https://github.com/openclaw/openclaw).
+🐈 **Hazel** is an **ultra-lightweight** personal AI assistant framework.
 
-⚡️ Delivers core agent functionality with **99% fewer lines of code** than OpenClaw.
+⚡️ Delivers core agent functionality in a minimal, clean codebase.
 
 📏 Real-time line count: run `bash core_agent_lines.sh` to verify anytime.
 
@@ -154,7 +154,7 @@ hazel gateway
 
 ## Key Features of Hazel:
 
-🪶 **Ultra-Lightweight**: A super lightweight implementation of OpenClaw — 99% smaller, significantly faster.
+🪶 **Ultra-Lightweight**: Minimal footprint — clean, fast, and easy to extend.
 
 🔬 **Research-Ready**: Clean, readable code that's easy to understand, modify, and extend for research.
 
