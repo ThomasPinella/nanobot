@@ -196,23 +196,30 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
 };
 
-// Open database (may not exist yet if no intents have been created)
+// Lazy database connection — retries on each request if not yet available
 let db = null;
-try {
-  if (fs.existsSync(DB_PATH)) {
-    db = new Database(DB_PATH, { readonly: true });
-    console.log('  Database:  ', DB_PATH);
-  } else {
-    console.log('  Database:   (not yet created — intents API will return empty)');
+function getDb() {
+  if (db) return db;
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      db = new Database(DB_PATH, { readonly: true });
+      console.log('  Database:  ', DB_PATH);
+    }
+  } catch (err) {
+    console.error('  Database:   FAILED -', err.message);
   }
-} catch (err) {
-  console.error('  Database:   FAILED -', err.message);
+  return db;
+}
+// Attempt initial connection
+getDb();
+if (!db) {
+  console.log('  Database:   (not yet created — will retry on first request)');
 }
 
 // --- API Handlers ---
 
 function handleApiIntents(res, url) {
-  if (!db) return sendJson(res, 200, { intents: [], count: 0 });
+  if (!getDb()) return sendJson(res, 200, { intents: [], count: 0 });
 
   const params = url.searchParams;
 
@@ -283,7 +290,7 @@ function handleApiIntents(res, url) {
 }
 
 function handleApiIntent(res, id) {
-  if (!db) return sendJson(res, 404, { error: 'No database' });
+  if (!getDb()) return sendJson(res, 404, { error: 'No database' });
 
   try {
     const intent = db.prepare('SELECT * FROM intents WHERE id = ?').get(id);
@@ -300,7 +307,7 @@ function handleApiIntent(res, id) {
 }
 
 function handleApiStats(res) {
-  if (!db) return sendJson(res, 200, { stats: [], overdue: 0, upcoming: 0 });
+  if (!getDb()) return sendJson(res, 200, { stats: [], overdue: 0, upcoming: 0 });
 
   try {
     const stats = db.prepare(`
