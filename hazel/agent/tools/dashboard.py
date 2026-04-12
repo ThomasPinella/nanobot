@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import socket
 import time
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,18 @@ from typing import Any
 from hazel.agent.tools.base import Tool
 
 SECRET_PATH = Path.home() / ".hazel" / "dashboard.key"
+
+
+def _get_lan_ip() -> str:
+    """Best-effort LAN IP of this machine (no packets sent)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 
 def get_or_create_secret() -> str:
@@ -42,7 +55,7 @@ class DashboardLinkTool(Tool):
     def __init__(
         self,
         *,
-        dashboard_host: str = "127.0.0.1",
+        dashboard_host: str = "0.0.0.0",
         dashboard_port: int = 8081,
         dashboard_base_url: str = "",
         token_ttl_minutes: int = 60,
@@ -93,7 +106,10 @@ class DashboardLinkTool(Tool):
         if self._base_url:
             base = self._base_url.rstrip("/")
         else:
-            base = f"http://{self._host}:{self._port}"
+            host = self._host
+            if host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                host = _get_lan_ip()
+            base = f"http://{host}:{self._port}"
 
         url = f"{base}/?token={token}"
 

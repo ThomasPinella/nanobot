@@ -173,6 +173,7 @@ def server(workspace):
     env = os.environ.copy()
     env["HAZEL_WORKSPACE"] = str(workspace)
     env["DASHBOARD_PORT"] = str(port)
+    env["HOME"] = str(workspace.parent)  # isolate from real ~/.hazel/dashboard.key
 
     proc = subprocess.Popen(
         ["node", str(SERVER_SCRIPT)],
