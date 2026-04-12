@@ -158,10 +158,18 @@ function sendExpiredPage(res) {
   res.end(html);
 }
 
-// Resolve workspace: env var > CLI arg > Hazel config > default
+// Resolve workspace: env var > parent of script dir > config file > default
 function resolveWorkspace() {
   if (process.env.HAZEL_WORKSPACE) {
     return process.env.HAZEL_WORKSPACE.replace(/^~/, os.homedir());
+  }
+
+  // If this script lives inside a workspace's canvas/ dir, use the parent
+  const parent = path.dirname(__dirname);
+  if (path.basename(__dirname) === 'canvas'
+      && (fs.existsSync(path.join(parent, 'data'))
+          || fs.existsSync(path.join(parent, 'memory')))) {
+    return parent;
   }
 
   // Try reading Hazel config
