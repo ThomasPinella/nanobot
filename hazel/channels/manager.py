@@ -141,20 +141,6 @@ class ChannelManager:
             except asyncio.CancelledError:
                 break
 
-    def get_channel(self, name: str) -> BaseChannel | None:
-        """Get a channel by name."""
-        return self.channels.get(name)
-
-    def get_status(self) -> dict[str, Any]:
-        """Get status of all channels."""
-        return {
-            name: {
-                "enabled": True,
-                "running": channel.is_running
-            }
-            for name, channel in self.channels.items()
-        }
-
     @property
     def enabled_channels(self) -> list[str]:
         """Get list of enabled channel names."""

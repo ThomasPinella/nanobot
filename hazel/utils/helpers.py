@@ -29,10 +29,6 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
-def timestamp() -> str:
-    """Current ISO timestamp."""
-    return datetime.now().isoformat()
-
 
 def current_time_str() -> str:
     """Human-readable current time with weekday and timezone, e.g. '2026-03-15 22:30 (Saturday) (CST)'."""
