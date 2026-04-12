@@ -1382,10 +1382,9 @@ def update(
     release_tag = release.get("tag_name", "unknown")
     console.print(f"[dim]Latest version: {release_tag}[/dim]\n")
 
-    # Uninstall and reinstall
-    subprocess.run([uv, "tool", "uninstall", "hazel-ai"], capture_output=True)
+    # Upgrade in-place (don't uninstall first — if reinstall fails, we'd lose the binary)
     result = subprocess.run(
-        [uv, "tool", "install", f"hazel-ai @ {wheel_url}"],
+        [uv, "tool", "install", "--force", f"hazel-ai @ {wheel_url}"],
         capture_output=True, text=True,
     )
 
