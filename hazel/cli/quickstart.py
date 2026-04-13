@@ -207,6 +207,42 @@ def _step_provider_advanced(config: Config) -> None:
 _GO_BACK = "go_back"
 
 
+def _print_qr(url: str, indent: str = "  ") -> None:
+    """Print a compact Unicode QR code for *url* to the terminal."""
+    try:
+        import qrcode
+    except ModuleNotFoundError:
+        return  # silently skip — dep missing, not worth crashing over
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=1,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+
+    # Render two rows per line using half-block Unicode chars for a compact
+    # QR that scans reliably in most terminals.
+    for y in range(0, len(matrix), 2):
+        line = indent
+        for x in range(len(matrix[y])):
+            top = matrix[y][x]
+            bottom = matrix[y + 1][x] if y + 1 < len(matrix) else False
+            if top and bottom:
+                line += "\u2588"  # full block
+            elif top:
+                line += "\u2580"  # upper half
+            elif bottom:
+                line += "\u2584"  # lower half
+            else:
+                line += " "
+        # Use print() directly so rich doesn't mangle the unicode blocks
+        print(line)
+
+
 def _step_channel(config: Config, total_steps: int = 2) -> bool | str:
     """Configure a chat channel.
 
@@ -224,11 +260,23 @@ def _step_channel(config: Config, total_steps: int = 2) -> bool | str:
         )
     )
 
+    # ── BotFather instructions ─────────────────────────────────────────
+    botfather_url = "https://telegram.me/BotFather"
     console.print()
-    console.print("[bold]How to create a Telegram bot:[/bold]")
-    console.print("  1. Open Telegram and search for [cyan]@BotFather[/cyan]")
-    console.print("  2. Send [cyan]/newbot[/cyan] and follow the prompts")
-    console.print("  3. BotFather will give you a bot token — copy it")
+    console.print("[bold]Step 2a — Create your Telegram bot[/bold]")
+    console.print()
+    console.print(
+        f"  Open BotFather: [link={botfather_url}][cyan]{botfather_url}[/cyan][/link]"
+    )
+    console.print("  (or scan this QR code on your phone)")
+    console.print()
+    _print_qr(botfather_url)
+    console.print()
+    console.print("  [bold]What to do:[/bold]")
+    console.print("    1. Send [cyan]/newbot[/cyan] to BotFather")
+    console.print("    2. Follow its prompts (pick a name + username)")
+    console.print("    3. BotFather will reply with a [bold]bot token[/bold] — copy it")
+    console.print("    4. Paste the token below")
     console.print()
 
     choice = q.select(
@@ -273,25 +321,50 @@ def _step_channel(config: Config, total_steps: int = 2) -> bool | str:
     telegram_cfg["enabled"] = True
     setattr(config.channels, "telegram", telegram_cfg)
 
-    console.print("[green]✓[/green] Telegram channel configured")
+    console.print("[green]✓[/green] Bot token saved")
 
-    # Optionally set allowed users
+    # ── userinfobot instructions (lock bot to just the user) ──────────
+    userinfo_url = "https://telegram.me/userinfobot"
     console.print()
-    console.print("[dim]Tip: You can restrict who can talk to your bot by adding Telegram[/dim]")
-    console.print("[dim]usernames to the allow list. Leave blank to allow everyone.[/dim]")
+    console.print("[bold]Step 2b — Lock your bot to just you[/bold]")
+    console.print()
+    console.print(
+        "  To make sure [bold]only you[/bold] can talk to your bot, we need your"
+    )
+    console.print("  Telegram user ID.")
+    console.print()
+    console.print(
+        f"  Open userinfobot: [link={userinfo_url}][cyan]{userinfo_url}[/cyan][/link]"
+    )
+    console.print("  (or scan this QR code on your phone)")
+    console.print()
+    _print_qr(userinfo_url)
+    console.print()
+    console.print("  [bold]What to do:[/bold]")
+    console.print("    1. Send [cyan]/start[/cyan] to @userinfobot")
+    console.print("    2. It will reply with your numeric [bold]user ID[/bold] (e.g. 123456789)")
+    console.print("    3. Paste it below")
+    console.print()
+    console.print(
+        "  [dim]Or press Enter to skip and allow everyone (not recommended).[/dim]"
+    )
 
-    allow_from = q.text(
-        "Allowed usernames (comma-separated, or press Enter to skip):",
+    user_id = q.text(
+        "Your Telegram user ID:",
         default="",
         qmark=">",
     ).ask()
 
-    if allow_from and allow_from.strip():
-        usernames = [u.strip().lstrip("@") for u in allow_from.split(",") if u.strip()]
-        if usernames:
-            telegram_cfg["allowFrom"] = usernames
-            setattr(config.channels, "telegram", telegram_cfg)
-            console.print(f"[green]✓[/green] Allow list set: {', '.join(usernames)}")
+    if user_id and user_id.strip():
+        uid = user_id.strip()
+        telegram_cfg["allowFrom"] = [uid]
+        setattr(config.channels, "telegram", telegram_cfg)
+        console.print(f"[green]✓[/green] Bot locked to user ID: {uid}")
+    else:
+        console.print("[yellow]![/yellow] No user ID — bot will accept messages from anyone.")
+        console.print(
+            "  [dim]To lock it later, edit allowFrom in your config.[/dim]"
+        )
 
     return True
 
