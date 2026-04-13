@@ -1,374 +1,304 @@
 ---
 name: skill-creator
-description: Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.
+description: >
+  Create new skills, modify and improve existing skills, and guide users through the skill
+  development process. Use when the user wants to create a skill from scratch, turn a workflow
+  into a reusable skill, edit or optimize an existing skill, test a skill against sample prompts,
+  improve a skill's description for better triggering, or package a skill for distribution.
+  Also use when the user says things like "make this a skill", "I want a skill for X",
+  "can we turn this into something reusable", or "help me build a skill".
 ---
 
 # Skill Creator
 
-This skill provides guidance for creating effective skills.
+A skill for creating new skills and iteratively improving them.
 
-## About Skills
+## How This Skill Works
 
-Skills are modular, self-contained packages that extend the agent's capabilities by providing
-specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific
-domains or tasks—they transform the agent from a general-purpose agent into a specialized agent
-equipped with procedural knowledge that no model can fully possess.
+Creating a good skill is an iterative process:
 
-### What Skills Provide
+1. **Understand** what the skill should do and roughly how
+2. **Draft** the skill (or improve an existing one)
+3. **Test** it on a few realistic prompts
+4. **Evaluate** the results with the user
+5. **Improve** based on feedback
+6. **Repeat** until it works well
+7. **Optimize** the description for reliable triggering
+8. **Package** and deliver
 
-1. Specialized workflows - Multi-step procedures for specific domains
-2. Tool integrations - Instructions for working with specific file formats or APIs
-3. Domain expertise - Company-specific knowledge, schemas, business logic
-4. Bundled resources - Scripts, references, and assets for complex and repetitive tasks
+Your job is to figure out where the user is in this process and help them move forward. Maybe they say "I want a skill for X" and you start from scratch. Maybe they already have a draft and want to improve it. Maybe they just finished using a skill and noticed it struggles with certain inputs. Meet them where they are.
 
-## Core Principles
+Be flexible — if the user says "I don't need to run tests, let's just write it," do that. The process is a guide, not a mandate.
 
-### Concise is Key
+## Communicating with the User
 
-The context window is a public good. Skills share the context window with everything else the agent needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
+Pay attention to context cues about the user's technical level. Some users are experienced developers; others are new to this. In the default case:
 
-**Default assumption: the agent is already very smart.** Only add context the agent doesn't already have. Challenge each piece of information: "Does the agent really need this explanation?" and "Does this paragraph justify its token cost?"
+- "evaluation" and "test cases" are fine to use
+- For terms like "JSON schema", "YAML frontmatter", or "assertions", briefly explain them if you're not sure the user knows what they mean
+- Short definitions in parentheses work well: "the frontmatter (the metadata block at the top of the file)"
 
-Prefer concise examples over verbose explanations.
+---
 
-### Set Appropriate Degrees of Freedom
+## Creating a Skill
 
-Match the level of specificity to the task's fragility and variability:
+### Step 1: Capture Intent
 
-**High freedom (text-based instructions)**: Use when multiple approaches are valid, decisions depend on context, or heuristics guide the approach.
+Start by understanding what the user wants. The current conversation may already contain a workflow the user wants to capture (e.g., "turn this into a skill"). If so, extract what you can from the conversation — tools used, steps taken, corrections made, input/output formats — and confirm with the user before moving on.
 
-**Medium freedom (pseudocode or scripts with parameters)**: Use when a preferred pattern exists, some variation is acceptable, or configuration affects behavior.
+Key questions to answer (ask only what's not already clear):
 
-**Low freedom (specific scripts, few parameters)**: Use when operations are fragile and error-prone, consistency is critical, or a specific sequence must be followed.
+1. **What should this skill enable?** What task or domain does it cover?
+2. **When should it trigger?** What would a user say that should activate this skill?
+3. **What's the expected output?** Files, messages, actions, a combination?
+4. **Are there edge cases or variants?** Different modes, input types, or configurations?
 
-Think of the agent as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
+Don't overwhelm the user with questions. Start with the most important ones and follow up as needed.
 
-### Anatomy of a Skill
+### Step 2: Interview and Research
 
-Every skill consists of a required SKILL.md file and optional bundled resources:
+Proactively ask about edge cases, input/output formats, example files, success criteria, and dependencies. If the user mentions specific tools or APIs, check whether they're available (MCP servers, CLI tools, etc.).
+
+Conclude this step when you have a clear picture of what the skill should do and how.
+
+### Step 3: Plan Reusable Contents
+
+Before writing, analyze the examples and workflows to identify what should be bundled:
+
+- **Scripts** (`scripts/`): Code that would be rewritten every time. Example: a PDF rotation script, a file converter, a data validator.
+- **References** (`references/`): Documentation the agent needs while working. Example: API schemas, database layouts, company policies.
+- **Assets** (`assets/`): Files used in output, not loaded into context. Example: templates, boilerplate projects, images.
+
+Ask: "For each example use case, what would I need to recreate from scratch every time?" — that's what should be bundled.
+
+### Step 4: Initialize the Skill
+
+For new skills, run the `init_skill.py` script to generate the directory structure:
+
+```bash
+python <skill-creator-path>/scripts/init_skill.py <skill-name> \
+  --path <output-directory> \
+  [--resources scripts,references,assets] \
+  [--examples]
+```
+
+For Hazel, custom skills live under the active workspace's `skills/` directory (e.g., `<workspace>/skills/my-skill/SKILL.md`) so they're discovered automatically. You can also place them in the global directory `~/.agents/skills/` to share across workspaces.
+
+Skip this step if improving an existing skill.
+
+#### Skill Naming
+
+- Lowercase letters, digits, and hyphens only (hyphen-case)
+- Under 64 characters
+- Prefer short, verb-led phrases: `pdf-editor`, `gh-address-comments`
+- Directory name must match the `name` in frontmatter
+
+### Step 5: Write the SKILL.md
+
+This is the core of skill creation. A skill has two parts: **frontmatter** (metadata the agent always sees) and **body** (instructions loaded when the skill triggers).
+
+#### Anatomy of a Skill
 
 ```
 skill-name/
 ├── SKILL.md (required)
-│   ├── YAML frontmatter metadata (required)
-│   │   ├── name: (required)
-│   │   └── description: (required)
-│   └── Markdown instructions (required)
+│   ├── YAML frontmatter (name, description)
+│   └── Markdown instructions
 └── Bundled Resources (optional)
-    ├── scripts/          - Executable code (Python/Bash/etc.)
-    ├── references/       - Documentation intended to be loaded into context as needed
-    └── assets/           - Files used in output (templates, icons, fonts, etc.)
+    ├── scripts/    - Executable code for deterministic tasks
+    ├── references/ - Docs loaded into context as needed
+    └── assets/     - Files used in output (templates, images, etc.)
 ```
 
-#### SKILL.md (required)
+#### Progressive Disclosure
 
-Every SKILL.md consists of:
+Skills use three loading levels to manage context efficiently:
 
-- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that the agent reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
-- **Body** (Markdown): Instructions and guidance for using the skill. Only loaded AFTER the skill triggers (if at all).
+1. **Metadata** (name + description) — always in context (~100 words)
+2. **SKILL.md body** — loaded when skill triggers (aim for <500 lines)
+3. **Bundled resources** — loaded as needed (unlimited; scripts can execute without reading)
 
-#### Bundled Resources (optional)
+Keep SKILL.md lean. When approaching 500 lines, split content into reference files with clear pointers about when to read them.
 
-##### Scripts (`scripts/`)
+#### Writing the Frontmatter
 
-Executable code (Python/Bash/etc.) for tasks that require deterministic reliability or are repeatedly rewritten.
+```yaml
+---
+name: my-skill
+description: >
+  What the skill does and when to use it. Be specific about triggers.
+---
+```
 
-- **When to include**: When the same code is being rewritten repeatedly or deterministic reliability is needed
-- **Example**: `scripts/rotate_pdf.py` for PDF rotation tasks
-- **Benefits**: Token efficient, deterministic, may be executed without loading into context
-- **Note**: Scripts may still need to be read by the agent for patching or environment-specific adjustments
+The `description` is the primary triggering mechanism — it determines whether the agent activates the skill. Include both what the skill does AND specific scenarios that should trigger it. Be slightly "pushy" — the agent tends to under-trigger rather than over-trigger.
 
-##### References (`references/`)
+Good description example:
+> Comprehensive document creation, editing, and analysis with support for tracked changes, comments, and formatting preservation. Use when working with .docx files for creating, modifying, or analyzing professional documents, even if the user doesn't explicitly mention "Word" or "docx".
 
-Documentation and reference material intended to be loaded as needed into context to inform the agent's process and thinking.
+In Hazel, `metadata` and `always` frontmatter fields are also supported when needed, but keep frontmatter minimal.
 
-- **When to include**: For documentation that the agent should reference while working
-- **Examples**: `references/finance.md` for financial schemas, `references/mnda.md` for company NDA template, `references/policies.md` for company policies, `references/api_docs.md` for API specifications
-- **Use cases**: Database schemas, API documentation, domain knowledge, company policies, detailed workflow guides
-- **Benefits**: Keeps SKILL.md lean, loaded only when the agent determines it's needed
-- **Best practice**: If files are large (>10k words), include grep search patterns in SKILL.md
-- **Avoid duplication**: Information should live in either SKILL.md or references files, not both. Prefer references files for detailed information unless it's truly core to the skill—this keeps SKILL.md lean while making information discoverable without hogging the context window. Keep only essential procedural instructions and workflow guidance in SKILL.md; move detailed reference material, schemas, and examples to references files.
+#### Writing the Body
 
-##### Assets (`assets/`)
+The body contains instructions for the agent *after* the skill has triggered. Key principles:
 
-Files not intended to be loaded into context, but rather used within the output the agent produces.
+**Explain the why.** The agent is smart. Rather than rigid MUSTs and NEVERs, explain the reasoning behind instructions. "Format dates as ISO 8601 because the downstream parser expects it" is more effective than "ALWAYS format dates as ISO 8601." If you find yourself writing ALWAYS or NEVER in all caps, try reframing as an explanation instead.
 
-- **When to include**: When the skill needs files that will be used in the final output
-- **Examples**: `assets/logo.png` for brand assets, `assets/slides.pptx` for PowerPoint templates, `assets/frontend-template/` for HTML/React boilerplate, `assets/font.ttf` for typography
-- **Use cases**: Templates, images, icons, boilerplate code, fonts, sample documents that get copied or modified
-- **Benefits**: Separates output resources from documentation, enables the agent to use files without loading them into context
+**Be concise.** The context window is shared with conversation history, other skills, and the system prompt. Only include information the agent doesn't already know. Challenge each paragraph: "Does this justify its token cost?"
 
-#### What to Not Include in a Skill
-
-A skill should only contain essential files that directly support its functionality. Do NOT create extraneous documentation or auxiliary files, including:
-
-- README.md
-- INSTALLATION_GUIDE.md
-- QUICK_REFERENCE.md
-- CHANGELOG.md
-- etc.
-
-The skill should only contain the information needed for an AI agent to do the job at hand. It should not contain auxiliary context about the process that went into creating it, setup and testing procedures, user-facing documentation, etc. Creating additional documentation files just adds clutter and confusion.
-
-### Progressive Disclosure Design Principle
-
-Skills use a three-level loading system to manage context efficiently:
-
-1. **Metadata (name + description)** - Always in context (~100 words)
-2. **SKILL.md body** - When skill triggers (<5k words)
-3. **Bundled resources** - As needed by the agent (Unlimited because scripts can be executed without reading into context window)
-
-#### Progressive Disclosure Patterns
-
-Keep SKILL.md body to the essentials and under 500 lines to minimize context bloat. Split content into separate files when approaching this limit. When splitting out content into other files, it is very important to reference them from SKILL.md and describe clearly when to read them, to ensure the reader of the skill knows they exist and when to use them.
-
-**Key principle:** When a skill supports multiple variations, frameworks, or options, keep only the core workflow and selection guidance in SKILL.md. Move variant-specific details (patterns, examples, configuration) into separate reference files.
-
-**Pattern 1: High-level guide with references**
+**Prefer examples over explanations.** A concrete example teaches more than a verbose description:
 
 ```markdown
-# PDF Processing
-
-## Quick start
-
-Extract text with pdfplumber:
-[code example]
-
-## Advanced features
-
-- **Form filling**: See [FORMS.md](FORMS.md) for complete guide
-- **API reference**: See [REFERENCE.md](REFERENCE.md) for all methods
-- **Examples**: See [EXAMPLES.md](EXAMPLES.md) for common patterns
+## Commit message format
+**Example:**
+Input: Added user authentication with JWT tokens
+Output: feat(auth): implement JWT-based authentication
 ```
 
-the agent loads FORMS.md, REFERENCE.md, or EXAMPLES.md only when needed.
+**Set appropriate degrees of freedom.** Match specificity to the task's fragility:
+- **High freedom** (text instructions): Multiple approaches valid, context-dependent
+- **Medium freedom** (pseudocode/parameters): Preferred pattern exists, some variation OK
+- **Low freedom** (specific scripts): Operations are fragile, consistency critical
 
-**Pattern 2: Domain-specific organization**
+**Use imperative form.** Write "Extract the data" not "The data should be extracted."
 
-For Skills with multiple domains, organize content by domain to avoid loading irrelevant context:
+**Structure for the skill's purpose.** Common patterns:
+- **Workflow-based**: Sequential steps (good for processes)
+- **Task-based**: Grouped operations (good for tool collections)
+- **Reference**: Standards and specs (good for guidelines)
 
-```
-bigquery-skill/
-├── SKILL.md (overview and navigation)
-└── reference/
-    ├── finance.md (revenue, billing metrics)
-    ├── sales.md (opportunities, pipeline)
-    ├── product.md (API usage, features)
-    └── marketing.md (campaigns, attribution)
-```
-
-When a user asks about sales metrics, the agent only reads sales.md.
-
-Similarly, for skills supporting multiple frameworks or variants, organize by variant:
+When a skill supports multiple variants (frameworks, providers, domains), keep the core workflow in SKILL.md and move variant-specific details into `references/` files:
 
 ```
 cloud-deploy/
-├── SKILL.md (workflow + provider selection)
+├── SKILL.md (workflow + selection logic)
 └── references/
-    ├── aws.md (AWS deployment patterns)
-    ├── gcp.md (GCP deployment patterns)
-    └── azure.md (Azure deployment patterns)
+    ├── aws.md
+    ├── gcp.md
+    └── azure.md
 ```
 
-When the user chooses AWS, the agent only reads aws.md.
+#### What NOT to Include
 
-**Pattern 3: Conditional details**
+- README.md, CHANGELOG.md, or other auxiliary docs
+- Information the agent already knows (general coding knowledge, common tools)
+- "When to use this skill" sections in the body (that belongs in the description)
+- Duplicate information across SKILL.md and reference files
 
-Show basic content, link to advanced content:
+### Step 6: Test the Skill
 
-```markdown
-# DOCX Processing
+After writing the skill, come up with 2-3 realistic test prompts — the kind of thing a real user would actually say. Share them with the user for review.
 
-## Creating documents
+Good test prompts are:
+- **Realistic**: Include personal context, specific file names, casual language
+- **Varied**: Cover the main use case, an edge case, and a variant
+- **Substantive**: Complex enough that the agent would actually benefit from the skill
 
-Use docx-js for new documents. See [DOCX-JS.md](DOCX-JS.md).
+Bad: `"Format this data"`, `"Create a chart"`
+Good: `"I have a CSV of our Q4 sales in ~/Downloads/sales_q4.csv — can you make a summary with profit margins by region?"`
 
-## Editing documents
+**Running tests:** Use the skill on each test prompt and observe:
+- Did the agent follow the skill's instructions?
+- Was the output what you expected?
+- Did the agent waste time on unproductive steps?
+- Were there gaps in the instructions?
 
-For simple edits, modify the XML directly.
+If Hazel's `spawn` tool is available, you can run multiple test cases as background subagents in parallel to save time.
 
-**For tracked changes**: See [REDLINING.md](REDLINING.md)
-**For OOXML details**: See [OOXML.md](OOXML.md)
-```
+Share results with the user for feedback before making changes.
 
-the agent reads REDLINING.md or OOXML.md only when the user needs those features.
+### Step 7: Iterate
 
-**Important guidelines:**
+This is the heart of the process. You've tested the skill and gotten feedback. Now improve it.
 
-- **Avoid deeply nested references** - Keep references one level deep from SKILL.md. All reference files should link directly from SKILL.md.
-- **Structure longer reference files** - For files longer than 100 lines, include a table of contents at the top so the agent can see the full scope when previewing.
+#### How to Think About Improvements
 
-## Skill Creation Process
+1. **Generalize from the feedback.** The skill will be used across many different prompts, not just these test cases. Don't overfit to specific examples — if there's a stubborn issue, try different approaches rather than adding narrow patches.
 
-Skill creation involves these steps:
+2. **Keep it lean.** Remove instructions that aren't pulling their weight. Read the test transcripts — if the skill makes the agent waste time on unproductive steps, cut those instructions.
 
-1. Understand the skill with concrete examples
-2. Plan reusable skill contents (scripts, references, assets)
-3. Initialize the skill (run init_skill.py)
-4. Edit the skill (implement resources and write SKILL.md)
-5. Package the skill (run package_skill.py)
-6. Iterate based on real usage
+3. **Look for repeated work.** If every test case results in the agent writing a similar helper script, that script should be bundled in `scripts/`. Write it once and tell the skill to use it.
 
-Follow these steps in order, skipping only if there is a clear reason why they are not applicable.
+4. **Explain, don't command.** If you find yourself adding rigid rules to fix issues, try explaining the reasoning instead. "Users expect the chart to load in under 2 seconds, so prefer SVG over high-res PNG" teaches the agent to make similar judgment calls in novel situations.
 
-### Skill Naming
+#### The Loop
 
-- Use lowercase letters, digits, and hyphens only; normalize user-provided titles to hyphen-case (e.g., "Plan Mode" -> `plan-mode`).
-- When generating names, generate a name under 64 characters (letters, digits, hyphens).
-- Prefer short, verb-led phrases that describe the action.
-- Namespace by tool when it improves clarity or triggering (e.g., `gh-address-comments`, `linear-address-issue`).
-- Name the skill folder exactly after the skill name.
+1. Apply improvements to the skill
+2. Rerun test cases
+3. Share results with the user
+4. Read feedback, improve again
+5. Repeat until the user is satisfied or feedback is all positive
 
-### Step 1: Understanding the Skill with Concrete Examples
+---
 
-Skip this step only when the skill's usage patterns are already clearly understood. It remains valuable even when working with an existing skill.
+## Improving an Existing Skill
 
-To create an effective skill, clearly understand concrete examples of how the skill will be used. This understanding can come from either direct user examples or generated examples that are validated with user feedback.
+When the user brings an existing skill to improve:
 
-For example, when building an image-editor skill, relevant questions include:
+1. Read the current SKILL.md and understand what it does
+2. Ask the user what's not working or what they want to change
+3. If the user has specific examples of failures, use those as test cases
+4. Apply improvements following the same iteration principles
+5. Preserve the original skill name — don't rename it
 
-- "What functionality should the image-editor skill support? Editing, rotating, anything else?"
-- "Can you give some examples of how this skill would be used?"
-- "I can imagine users asking for things like 'Remove the red-eye from this image' or 'Rotate this image'. Are there other ways you imagine this skill being used?"
-- "What would a user say that should trigger this skill?"
+---
 
-To avoid overwhelming users, avoid asking too many questions in a single message. Start with the most important questions and follow up as needed for better effectiveness.
+## Description Optimization
 
-Conclude this step when there is a clear sense of the functionality the skill should support.
+The description is the most important part of a skill for triggering. After the skill content is solid, optimize the description.
 
-### Step 2: Planning the Reusable Skill Contents
+### Writing a Good Description
 
-To turn concrete examples into an effective skill, analyze each example by:
+1. **Start with what the skill does** in plain language
+2. **List specific trigger scenarios** — the contexts and phrases that should activate it
+3. **Include non-obvious triggers** — things a user might say that should activate this skill even if they don't mention it by name
+4. **Be slightly pushy** — err on the side of triggering too often rather than too rarely
 
-1. Considering how to execute on the example from scratch
-2. Identifying what scripts, references, and assets would be helpful when executing these workflows repeatedly
+### Testing Trigger Quality
 
-Example: When building a `pdf-editor` skill to handle queries like "Help me rotate this PDF," the analysis shows:
+Think of 5-10 realistic prompts:
+- Half should trigger the skill
+- Half should NOT trigger it (but be close enough to be tricky)
 
-1. Rotating a PDF requires re-writing the same code each time
-2. A `scripts/rotate_pdf.py` script would be helpful to store in the skill
+For should-trigger prompts, think about coverage: different phrasings, casual vs. formal, explicit vs. implicit references to the skill's domain.
 
-Example: When designing a `frontend-webapp-builder` skill for queries like "Build me a todo app" or "Build me a dashboard to track my steps," the analysis shows:
+For should-NOT-trigger prompts, focus on near-misses: queries that share keywords but actually need something different. `"Write a fibonacci function"` is too obviously different — `"summarize this PDF for me"` is a better negative test for a PDF editing skill.
 
-1. Writing a frontend webapp requires the same boilerplate HTML/React each time
-2. An `assets/hello-world/` template containing the boilerplate HTML/React project files would be helpful to store in the skill
+Run these prompts mentally or in practice and adjust the description based on what triggers correctly.
 
-Example: When building a `big-query` skill to handle queries like "How many users have logged in today?" the analysis shows:
+---
 
-1. Querying BigQuery requires re-discovering the table schemas and relationships each time
-2. A `references/schema.md` file documenting the table schemas would be helpful to store in the skill
+## Validating a Skill
 
-To establish the skill's contents, analyze each concrete example to create a list of the reusable resources to include: scripts, references, and assets.
-
-### Step 3: Initializing the Skill
-
-At this point, it is time to actually create the skill.
-
-Skip this step only if the skill being developed already exists, and iteration or packaging is needed. In this case, continue to the next step.
-
-When creating a new skill from scratch, always run the `init_skill.py` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
-
-For Hazel, custom skills should live under the active workspace `skills/` directory so they can be discovered automatically at runtime (for example, `<workspace>/skills/my-skill/SKILL.md`).
-
-Usage:
+Before packaging, validate the skill structure:
 
 ```bash
-scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets] [--examples]
+python <skill-creator-path>/scripts/quick_validate.py <path/to/skill-folder>
 ```
 
-Examples:
+This checks:
+- SKILL.md exists with valid YAML frontmatter
+- Name matches directory name and follows conventions
+- Description is complete (no TODOs, under 1024 chars)
+- Only allowed files/directories in the skill root
+
+## Packaging a Skill
+
+When the skill is ready for distribution, package it:
 
 ```bash
-scripts/init_skill.py my-skill --path ./workspace/skills
-scripts/init_skill.py my-skill --path ./workspace/skills --resources scripts,references
-scripts/init_skill.py my-skill --path ./workspace/skills --resources scripts --examples
+python <skill-creator-path>/scripts/package_skill.py <path/to/skill-folder> [output-directory]
 ```
 
-The script:
+This validates the skill and then creates a `.skill` file (a zip archive) containing all the skill's files. Symlinks are rejected for security. The resulting `.skill` file can be shared and installed.
 
-- Creates the skill directory at the specified path
-- Generates a SKILL.md template with proper frontmatter and TODO placeholders
-- Optionally creates resource directories based on `--resources`
-- Optionally adds example files when `--examples` is set
+---
 
-After initialization, customize the SKILL.md and add resources as needed. If you used `--examples`, replace or delete placeholder files.
+## Quick Reference: Skill File Limits
 
-### Step 4: Edit the Skill
-
-When editing the (newly-generated or existing) skill, remember that the skill is being created for another instance of the agent to use. Include information that would be beneficial and non-obvious to the agent. Consider what procedural knowledge, domain-specific details, or reusable assets would help another the agent instance execute these tasks more effectively.
-
-#### Learn Proven Design Patterns
-
-Consult these helpful guides based on your skill's needs:
-
-- **Multi-step processes**: See references/workflows.md for sequential workflows and conditional logic
-- **Specific output formats or quality standards**: See references/output-patterns.md for template and example patterns
-
-These files contain established best practices for effective skill design.
-
-#### Start with Reusable Skill Contents
-
-To begin implementation, start with the reusable resources identified above: `scripts/`, `references/`, and `assets/` files. Note that this step may require user input. For example, when implementing a `brand-guidelines` skill, the user may need to provide brand assets or templates to store in `assets/`, or documentation to store in `references/`.
-
-Added scripts must be tested by actually running them to ensure there are no bugs and that the output matches what is expected. If there are many similar scripts, only a representative sample needs to be tested to ensure confidence that they all work while balancing time to completion.
-
-If you used `--examples`, delete any placeholder files that are not needed for the skill. Only create resource directories that are actually required.
-
-#### Update SKILL.md
-
-**Writing Guidelines:** Always use imperative/infinitive form.
-
-##### Frontmatter
-
-Write the YAML frontmatter with `name` and `description`:
-
-- `name`: The skill name
-- `description`: This is the primary triggering mechanism for your skill, and helps the agent understand when to use the skill.
-  - Include both what the Skill does and specific triggers/contexts for when to use it.
-  - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to the agent.
-  - Example description for a `docx` skill: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when the agent needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
-
-Keep frontmatter minimal. In Hazel, `metadata` and `always` are also supported when needed, but avoid adding extra fields unless they are actually required.
-
-##### Body
-
-Write instructions for using the skill and its bundled resources.
-
-### Step 5: Packaging a Skill
-
-Once development of the skill is complete, it must be packaged into a distributable .skill file that gets shared with the user. The packaging process automatically validates the skill first to ensure it meets all requirements:
-
-```bash
-scripts/package_skill.py <path/to/skill-folder>
-```
-
-Optional output directory specification:
-
-```bash
-scripts/package_skill.py <path/to/skill-folder> ./dist
-```
-
-The packaging script will:
-
-1. **Validate** the skill automatically, checking:
-   - YAML frontmatter format and required fields
-   - Skill naming conventions and directory structure
-   - Description completeness and quality
-   - File organization and resource references
-
-2. **Package** the skill if validation passes, creating a .skill file named after the skill (e.g., `my-skill.skill`) that includes all files and maintains the proper directory structure for distribution. The .skill file is a zip file with a .skill extension.
-
-   Security restriction: symlinks are rejected and packaging fails when any symlink is present.
-
-If validation fails, the script will report the errors and exit without creating a package. Fix any validation errors and run the packaging command again.
-
-### Step 6: Iterate
-
-After testing the skill, users may request improvements. Often this happens right after using the skill, with fresh context of how the skill performed.
-
-**Iteration workflow:**
-
-1. Use the skill on real tasks
-2. Notice struggles or inefficiencies
-3. Identify how SKILL.md or bundled resources should be updated
-4. Implement changes and test again
+| Component | Guideline |
+|-----------|-----------|
+| Description | Under 1024 characters, specific triggers included |
+| SKILL.md body | Under 500 lines |
+| Reference files | Table of contents if over 100 lines |
+| Skill name | Under 64 characters, hyphen-case |
+| Resource dirs | Only `scripts/`, `references/`, `assets/` |
