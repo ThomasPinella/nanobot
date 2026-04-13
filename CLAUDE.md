@@ -353,3 +353,29 @@ Tests run on Python 3.11, 3.12, 3.13. CI is in `.github/workflows/ci.yml`.
 - **Context window management**: `MemoryConsolidator` keeps prompt size under half the context window by consolidating old messages.
 - **Entity memory lifecycle**: Agent detects durable signal → creates/updates entity file in `memory/areas/` per `ENTITY_TEMPLATE.md` → calls `record_change` to log to ledger → runs `generate-cards-index.sh` to refresh cards index. All workspace directories are auto-created by `sync_workspace_templates` on first run.
 - **Config camelCase**: Schema uses `alias_generator=to_camel` so JSON uses camelCase but Python uses snake_case.
+
+## Cutting a Release
+
+Releases are built and published automatically by CI (`.github/workflows/release.yml`) when a `v*` tag is pushed.
+
+```bash
+# 1. Bump version in BOTH files (they must match):
+#    - pyproject.toml        → version = "X.Y.Z"
+#    - hazel/__init__.py     → __version__ = "X.Y.Z"
+
+# 2. Commit the version bump
+git add pyproject.toml hazel/__init__.py
+git commit -m "chore: bump version to X.Y.Z"
+git push
+
+# 3. Tag and push — this triggers the release workflow
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The workflow will:
+- Build a wheel and sdist via `python -m build`
+- Create a GitHub Release with auto-generated notes (`gh release create --generate-notes`)
+- Attach the `.whl` and `.tar.gz` to the release
+
+Tag format: `v{version}` (e.g. `v0.1.5.post9`). The workflow is idempotent — re-running on the same tag will overwrite artifacts without error.

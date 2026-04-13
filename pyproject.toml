@@ -1,6 +1,6 @@
 [project]
 name = "hazel-ai"
-version = "0.1.5.post8"
+version = "0.1.5.post9"
 description = "A lightweight personal AI assistant framework"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
