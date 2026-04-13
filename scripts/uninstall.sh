@@ -5,7 +5,7 @@
 #   curl -LsSf https://raw.githubusercontent.com/ThomasPinella/hazel/main/scripts/uninstall.sh | bash
 #
 # What this does:
-#   1. Stops and removes the dashboard systemd service (if installed)
+#   1. Stops and removes services (systemd on Linux, LaunchAgent on macOS)
 #   2. Uninstalls hazel-ai via uv
 #   3. Optionally removes ~/.hazel/ (config, workspace, sessions, memory)
 
@@ -21,10 +21,34 @@ warn()  { echo -e "${YELLOW}==>${NC} $*"; }
 error() { echo -e "${RED}ERROR:${NC} $*" >&2; }
 
 # ---------------------------------------------------------------------------
-# Step 1: Stop and remove the dashboard service
+# Step 1: Stop and remove services (dashboard + gateway)
 # ---------------------------------------------------------------------------
-remove_dashboard_service() {
-    local service="hazel-dashboard"
+remove_services() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        remove_launchagent "ai.hazel.dashboard"
+        remove_launchagent "ai.hazel.gateway"
+    else
+        remove_systemd_service "hazel-dashboard"
+        remove_systemd_service "hazel-gateway"
+    fi
+}
+
+remove_launchagent() {
+    local label="$1"
+    local plist="$HOME/Library/LaunchAgents/${label}.plist"
+
+    if [[ ! -f "$plist" ]]; then
+        return
+    fi
+
+    info "Removing $label LaunchAgent..."
+    launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+    rm -f "$plist"
+    info "$label removed"
+}
+
+remove_systemd_service() {
+    local service="$1"
 
     if ! command -v systemctl &>/dev/null; then
         return
@@ -36,7 +60,7 @@ remove_dashboard_service() {
         systemctl --user disable "$service" 2>/dev/null || true
         rm -f "$HOME/.config/systemd/user/${service}.service"
         systemctl --user daemon-reload 2>/dev/null || true
-        info "Dashboard service removed"
+        info "$service removed"
     fi
 }
 
@@ -108,7 +132,7 @@ main() {
     echo "  Hazel Uninstaller"
     echo ""
 
-    remove_dashboard_service
+    remove_services
     uninstall_package
     remove_user_data
 

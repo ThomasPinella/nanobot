@@ -538,9 +538,11 @@ def setup_skills(
 ):
     """Run setup instructions to install skills and configure the workspace.
 
-    Paste the full contents of your setup instructions into the terminal
-    and press Enter.
+    If saved instructions exist from a prior install, they are used automatically.
+    Otherwise, paste your setup instructions into the terminal and press Enter.
     """
+    from hazel.config.paths import get_pending_setup_skills_path
+
     cfg = _load_runtime_config(config, workspace)
 
     # Check that an LLM provider is configured
@@ -548,6 +550,16 @@ def setup_skills(
         console.print("[red]Error: No LLM provider is configured.[/red]")
         console.print("Set up a provider first with [cyan]hazel quickstart[/cyan] or [cyan]hazel onboard --wizard[/cyan]")
         raise typer.Exit(1)
+
+    # Check for saved pending instructions from install
+    pending_path = get_pending_setup_skills_path()
+    if pending_path.exists():
+        instructions = pending_path.read_text(encoding="utf-8").strip()
+        if instructions:
+            console.print("[green]✓[/green] Found saved skills setup instructions from install.")
+            _run_setup_skills(cfg, instructions)
+            pending_path.unlink()
+            return
 
     console.print("Paste your setup instructions below and press [bold]Enter[/bold]:\n")
     try:
@@ -703,15 +715,28 @@ def setup_user_actions(
 ):
     """Interactive setup session for user actions and workflows.
 
-    Paste instructions describing actions or automations you want,
+    If saved instructions exist from a prior install, they are used automatically.
+    Otherwise, paste instructions describing actions or automations you want,
     then work through an interactive dialogue with the agent to set them up.
     """
+    from hazel.config.paths import get_pending_setup_user_actions_path
+
     cfg = _load_runtime_config(config, workspace)
 
     if not cfg.get_api_key():
         console.print("[red]Error: No LLM provider is configured.[/red]")
         console.print("Set up a provider first with [cyan]hazel quickstart[/cyan] or [cyan]hazel onboard --wizard[/cyan]")
         raise typer.Exit(1)
+
+    # Check for saved pending instructions from install
+    pending_path = get_pending_setup_user_actions_path()
+    if pending_path.exists():
+        instructions = pending_path.read_text(encoding="utf-8").strip()
+        if instructions:
+            console.print("[green]✓[/green] Found saved user actions instructions from install.")
+            _run_setup_user_actions(cfg, instructions)
+            pending_path.unlink()
+            return
 
     console.print("Paste your setup instructions below and press [bold]Enter[/bold]:\n")
     try:
@@ -836,9 +861,74 @@ def _setup_dashboard(config: Config) -> None:
     get_or_create_secret()
     console.print("[green]\u2713[/green] Dashboard auth secret ready")
 
-    # Set up systemd user service
+    # Set up and start the dashboard as a background service
     port = dashboard_cfg.port
     host = dashboard_cfg.host
+    manual_cmd = f"DASHBOARD_HOST={host} DASHBOARD_PORT={port} node {canvas_dest / 'dashboard-server.js'}"
+
+    if sys.platform == "darwin":
+        _dashboard_service_macos(node, canvas_dest, host, port, manual_cmd)
+    else:
+        _dashboard_service_linux(node, canvas_dest, host, port, manual_cmd)
+
+
+def _dashboard_service_macos(node: str, canvas_dest: Path, host: str, port: int, manual_cmd: str) -> None:
+    """Install and start the dashboard as a macOS LaunchAgent."""
+    import plistlib
+    import subprocess
+
+    label = "ai.hazel.dashboard"
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True, exist_ok=True)
+    plist_path = launch_agents / f"{label}.plist"
+
+    plist = {
+        "Label": label,
+        "ProgramArguments": [node, str(canvas_dest / "dashboard-server.js")],
+        "EnvironmentVariables": {
+            "NODE_ENV": "production",
+            "DASHBOARD_PORT": str(port),
+            "DASHBOARD_HOST": host,
+        },
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "StandardOutPath": str(Path.home() / ".hazel" / "logs" / "dashboard.out.log"),
+        "StandardErrorPath": str(Path.home() / ".hazel" / "logs" / "dashboard.err.log"),
+    }
+    (Path.home() / ".hazel" / "logs").mkdir(parents=True, exist_ok=True)
+
+    # Unload existing service before overwriting plist
+    if plist_path.exists():
+        subprocess.run(
+            ["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
+            capture_output=True, timeout=10,
+        )
+
+    with open(plist_path, "wb") as f:
+        plistlib.dump(plist, f)
+
+    try:
+        result = subprocess.run(
+            ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0 and "already bootstrapped" not in result.stderr.lower():
+            console.print(f"[yellow]![/yellow] launchctl bootstrap failed: {result.stderr.strip()[:200]}")
+            console.print(f"  Start manually: [cyan]{manual_cmd}[/cyan]")
+            return
+
+        console.print(f"[green]\u2713[/green] Dashboard running at [cyan]http://{host}:{port}[/cyan]")
+        console.print(f"  [dim]Logs:[/dim]    ~/.hazel/logs/dashboard.*.log")
+        console.print(f"  [dim]Stop:[/dim]    launchctl bootout gui/{os.getuid()} {plist_path}")
+    except Exception as e:
+        console.print(f"[yellow]![/yellow] Could not start service: {e}")
+        console.print(f"  Start manually: [cyan]{manual_cmd}[/cyan]")
+
+
+def _dashboard_service_linux(node: str, canvas_dest: Path, host: str, port: int, manual_cmd: str) -> None:
+    """Install and start the dashboard as a systemd user service."""
+    import subprocess
+
     systemd_dir = Path.home() / ".config" / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     service_path = systemd_dir / "hazel-dashboard.service"
@@ -875,7 +965,7 @@ WantedBy=default.target
         )
         if reload.returncode != 0:
             console.print(f"[yellow]![/yellow] systemctl --user daemon-reload failed: {reload.stderr.strip()[:200]}")
-            console.print(f"  Start manually: [cyan]DASHBOARD_HOST={host} DASHBOARD_PORT={port} node {canvas_dest / 'dashboard-server.js'}[/cyan]")
+            console.print(f"  Start manually: [cyan]{manual_cmd}[/cyan]")
             return
 
         enable = subprocess.run(
@@ -884,7 +974,7 @@ WantedBy=default.target
         )
         if enable.returncode != 0:
             console.print(f"[yellow]![/yellow] Could not enable dashboard service: {enable.stderr.strip()[:200]}")
-            console.print(f"  Start manually: [cyan]DASHBOARD_HOST={host} DASHBOARD_PORT={port} node {canvas_dest / 'dashboard-server.js'}[/cyan]")
+            console.print(f"  Start manually: [cyan]{manual_cmd}[/cyan]")
             return
 
         # Verify it started
@@ -898,10 +988,10 @@ WantedBy=default.target
             console.print(f"[yellow]![/yellow] Service installed but not active. Check with: systemctl --user status hazel-dashboard")
     except FileNotFoundError:
         console.print("[yellow]![/yellow] systemctl not found — start the dashboard manually:")
-        console.print(f"  [cyan]DASHBOARD_HOST={host} DASHBOARD_PORT={port} node {canvas_dest / 'dashboard-server.js'}[/cyan]")
+        console.print(f"  [cyan]{manual_cmd}[/cyan]")
     except Exception as e:
         console.print(f"[yellow]![/yellow] Could not start service: {e}")
-        console.print(f"  Start manually: [cyan]DASHBOARD_PORT={port} node {canvas_dest / 'dashboard-server.js'}[/cyan]")
+        console.print(f"  Start manually: [cyan]{manual_cmd}[/cyan]")
 
 
 def _make_provider(config: Config):
@@ -1002,6 +1092,30 @@ def _warn_deprecated_config_keys(config_path: Path | None) -> None:
 
 
 # ============================================================================
+# ---------------------------------------------------------------------------
+# System-event handlers (pure-code cron jobs, no LLM)
+# ---------------------------------------------------------------------------
+
+
+async def _handle_system_event(
+    job: "CronJob",
+    workspace: Path,
+    bus: "MessageBus",
+) -> str | None:
+    """Dispatch a system_event cron job to its pure-code handler."""
+    from hazel.cron.intent_notifier import check_and_notify
+    from hazel.cron.service import INTENT_NOTIFICATIONS_NAME
+
+    if job.name == INTENT_NOTIFICATIONS_NAME:
+        channel = job.payload.channel or "cli"
+        chat_id = job.payload.to or "direct"
+        return await check_and_notify(workspace, channel, chat_id, bus)
+
+    from loguru import logger
+    logger.warning("Unknown system_event job: {}", job.name)
+    return None
+
+
 # Gateway / Server
 # ============================================================================
 
@@ -1072,7 +1186,11 @@ def gateway(
 
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
-        """Execute a cron job through the agent."""
+        """Execute a cron job through the agent (or pure-code for system_event)."""
+        # System events are handled by pure-code handlers — no LLM needed.
+        if job.payload.kind == "system_event":
+            return await _handle_system_event(job, config.workspace_path, bus)
+
         from hazel.agent.tools.cron import CronTool
         from hazel.agent.tools.message import MessageTool
         from hazel.utils.evaluator import evaluate_response
@@ -1206,7 +1324,7 @@ def gateway(
 
 
 def _gateway_service_install(config_path: str | None, port: int | None) -> None:
-    """Install and start the gateway as a systemd user service."""
+    """Install and start the gateway as a background service."""
     import shutil
     import subprocess
 
@@ -1215,12 +1333,70 @@ def _gateway_service_install(config_path: str | None, port: int | None) -> None:
         console.print("[red]ERROR:[/red] 'hazel' not found on PATH.")
         return
 
-    # Build the ExecStart command (--foreground so systemd runs the actual server)
     exec_parts = [hazel_bin, "gateway", "--foreground"]
     if config_path:
         exec_parts.extend(["--config", config_path])
     if port is not None:
         exec_parts.extend(["--port", str(port)])
+
+    if sys.platform == "darwin":
+        _gateway_service_install_macos(exec_parts)
+    else:
+        _gateway_service_install_linux(exec_parts)
+
+
+def _gateway_service_install_macos(exec_parts: list[str]) -> None:
+    """Install and start the gateway as a macOS LaunchAgent."""
+    import plistlib
+    import subprocess
+
+    label = "ai.hazel.gateway"
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True, exist_ok=True)
+    plist_path = launch_agents / f"{label}.plist"
+
+    plist = {
+        "Label": label,
+        "ProgramArguments": exec_parts,
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "StandardOutPath": str(Path.home() / ".hazel" / "logs" / "gateway.out.log"),
+        "StandardErrorPath": str(Path.home() / ".hazel" / "logs" / "gateway.err.log"),
+    }
+    (Path.home() / ".hazel" / "logs").mkdir(parents=True, exist_ok=True)
+
+    # Unload existing service before overwriting plist
+    if plist_path.exists():
+        subprocess.run(
+            ["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
+            capture_output=True, timeout=10,
+        )
+
+    with open(plist_path, "wb") as f:
+        plistlib.dump(plist, f)
+
+    try:
+        result = subprocess.run(
+            ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0 and "already bootstrapped" not in result.stderr.lower():
+            console.print(f"[yellow]![/yellow] launchctl bootstrap failed: {result.stderr.strip()[:200]}")
+            console.print(f"  Run manually: [cyan]{' '.join(exec_parts)}[/cyan]")
+            return
+
+        console.print("[green]\u2713[/green] Gateway is running in the background.")
+        console.print(f"  [dim]Logs:[/dim]    ~/.hazel/logs/gateway.*.log")
+        console.print(f"  [dim]Stop:[/dim]    hazel gateway --stop")
+    except Exception as e:
+        console.print(f"[yellow]![/yellow] Could not start service: {e}")
+        console.print(f"  Run manually: [cyan]{' '.join(exec_parts)}[/cyan]")
+
+
+def _gateway_service_install_linux(exec_parts: list[str]) -> None:
+    """Install and start the gateway as a systemd user service."""
+    import subprocess
+
     exec_start = " ".join(exec_parts)
 
     systemd_dir = Path.home() / ".config" / "systemd" / "user"
@@ -1275,7 +1451,7 @@ WantedBy=default.target
             capture_output=True, text=True, timeout=10,
         )
         if check.stdout.strip() == "active":
-            console.print("[green]✓[/green] Gateway is running in the background.")
+            console.print("[green]\u2713[/green] Gateway is running in the background.")
             console.print("  [dim]Status:[/dim]   systemctl --user status hazel-gateway")
             console.print("  [dim]Logs:[/dim]     journalctl --user -u hazel-gateway -f")
             console.print("  [dim]Stop:[/dim]     hazel gateway --stop")
@@ -1291,17 +1467,34 @@ WantedBy=default.target
 
 
 def _gateway_service_stop() -> None:
-    """Stop and disable the gateway systemd user service."""
+    """Stop and disable the gateway background service."""
     import subprocess
 
-    try:
-        subprocess.run(["systemctl", "--user", "stop", "hazel-gateway"], capture_output=True, timeout=15)
-        subprocess.run(["systemctl", "--user", "disable", "hazel-gateway"], capture_output=True, timeout=15)
-        console.print("[green]✓[/green] Gateway service stopped and disabled.")
-    except FileNotFoundError:
-        console.print("[yellow]![/yellow] systemctl not found.")
-    except Exception as e:
-        console.print(f"[red]ERROR:[/red] {e}")
+    if sys.platform == "darwin":
+        label = "ai.hazel.gateway"
+        plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        try:
+            result = subprocess.run(
+                ["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 or "not found" in result.stderr.lower():
+                console.print("[green]\u2713[/green] Gateway service stopped.")
+            else:
+                console.print(f"[yellow]![/yellow] launchctl bootout: {result.stderr.strip()[:200]}")
+            if plist_path.exists():
+                plist_path.unlink()
+        except Exception as e:
+            console.print(f"[red]ERROR:[/red] {e}")
+    else:
+        try:
+            subprocess.run(["systemctl", "--user", "stop", "hazel-gateway"], capture_output=True, timeout=15)
+            subprocess.run(["systemctl", "--user", "disable", "hazel-gateway"], capture_output=True, timeout=15)
+            console.print("[green]\u2713[/green] Gateway service stopped and disabled.")
+        except FileNotFoundError:
+            console.print("[yellow]![/yellow] systemctl not found.")
+        except Exception as e:
+            console.print(f"[red]ERROR:[/red] {e}")
 
 
 

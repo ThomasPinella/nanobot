@@ -18,28 +18,7 @@ from hazel.cron.types import CronJob, CronJobState, CronPayload, CronRunRecord, 
 
 INTENT_NOTIFICATIONS_NAME = "Intent Notifications"
 
-INTENT_NOTIFICATIONS_PROMPT = """\
-STEP 1 (MANDATORY): Run `date -u +"%Y-%m-%dT%H:%M:%SZ"` to get the REAL current UTC time. \
-Use ONLY this value as "now". Do NOT use any "Current time" string from this prompt — it may be wrong.
-
-STEP 2: Check for due intents using intent_list_due. Window: from now minus 1 hour to now. Include overdue.
-
-For each result:
-- If status is "snoozed" AND snooze_until is still in the future -> SKIP IT
-- If status is "snoozed" AND snooze_until is in the past -> TREAT AS DUE \
-(snooze expired, set status back to "active" using intent_update)
-- If status is "active" AND due_at is in the FUTURE (after now) -> SKIP IT (not due yet)
-- If status is "active" AND due_at is at or before now -> TREAT AS DUE
-
-For intents that qualify as due:
-- Check if last_fired_at exists and is within the last 2 hours -> SKIP (already notified recently)
-- If not recently notified: Send ONE concise message listing all due intents. \
-Use message tool with action=send, channel=telegram, target=<chat_id from session>.
-- After sending, update each notified intent with intent_update to set last_fired_at to current \
-ISO8601 UTC time. Do NOT snooze, do NOT change status, do NOT change due_at. Just set last_fired_at.
-
-If nothing qualifies: Reply with just NO_REPLY
-"""
+INTENT_NOTIFICATIONS_PROMPT = "intent_notifications_system_event"
 
 DAILY_CONSOLIDATION_NAME = "Daily Memory Consolidation"
 
@@ -483,6 +462,7 @@ class CronService:
         channel: str | None = None,
         to: str | None = None,
         delete_after_run: bool = False,
+        kind: str = "agent_turn",
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()
@@ -495,7 +475,7 @@ class CronService:
             enabled=True,
             schedule=schedule,
             payload=CronPayload(
-                kind="agent_turn",
+                kind=kind,
                 message=message,
                 deliver=deliver,
                 channel=channel,
@@ -584,6 +564,17 @@ class CronService:
             )
             logger.info("Cron: bootstrapped default job '{}'", DAILY_CONSOLIDATION_NAME)
 
+        # Migrate existing LLM-based intent notification jobs to pure-code.
+        # Older installs have this job with kind="agent_turn"; upgrade in place.
+        for job in store.jobs:
+            if job.name == INTENT_NOTIFICATIONS_NAME and job.payload.kind == "agent_turn":
+                job.payload.kind = "system_event"
+                job.payload.message = INTENT_NOTIFICATIONS_PROMPT
+                job.updated_at_ms = _now_ms()
+                self._save_store()
+                logger.info("Cron: migrated '{}' from agent_turn to system_event", INTENT_NOTIFICATIONS_NAME)
+                break
+
         if INTENT_NOTIFICATIONS_NAME not in existing_names:
             # Resolve Telegram target from channels config
             tg_target: str | None = None
@@ -606,6 +597,7 @@ class CronService:
                     deliver=False,
                     channel="telegram",
                     to=tg_target,
+                    kind="system_event",
                 )
                 logger.info(
                     "Cron: bootstrapped default job '{}' -> telegram:{}",

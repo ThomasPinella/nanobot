@@ -146,17 +146,25 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             f"{content}"
         ]
 
-        # Include agent identity if provided via setup config
+        # If an agent identity was provided via setup config, instruct the AI
+        # to incorporate it into its core files during onboarding.
         identity_file = self.workspace / "AGENT_IDENTITY.md"
         if identity_file.exists():
             identity_content = identity_file.read_text(encoding="utf-8").strip()
             if identity_content:
                 parts.append(
                     "\n\n---\n\n"
-                    "# Agent Identity\n\n"
-                    "The following describes your identity, personality, and role as configured "
-                    "by the person who set you up. Incorporate this into how you present yourself "
-                    "and interact with the user.\n\n"
+                    "# Pre-Configured Agent Identity\n\n"
+                    "The person who set you up provided the following identity description for you. "
+                    "This is who you already are — it should shape how you present yourself and "
+                    "steer the onboarding conversation.\n\n"
+                    "**During onboarding, you must incorporate this identity into your core files:**\n"
+                    "- Update `SOUL.md` with your name, personality, tone, and values from this identity.\n"
+                    "- Update `USER.md` with any relevant details about the user or your relationship to them.\n"
+                    "- Save key facts to `memory/MEMORY.md` under an appropriate section.\n"
+                    "- Use this identity to guide the conversation — you already know who you are, "
+                    "so introduce yourself accordingly and adapt the onboarding questions to fill in "
+                    "what you don't already know rather than starting from scratch.\n\n"
                     f"{identity_content}"
                 )
 

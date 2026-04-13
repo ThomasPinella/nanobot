@@ -53,3 +53,13 @@ def get_bridge_install_dir() -> Path:
 def get_legacy_sessions_dir() -> Path:
     """Return the legacy global session directory used for migration fallback."""
     return Path.home() / ".hazel" / "sessions"
+
+
+def get_pending_setup_skills_path() -> Path:
+    """Return the path for saved pending skills setup instructions."""
+    return get_data_dir() / "pending_setup_skills.md"
+
+
+def get_pending_setup_user_actions_path() -> Path:
+    """Return the path for saved pending user-actions setup instructions."""
+    return get_data_dir() / "pending_setup_user_actions.md"

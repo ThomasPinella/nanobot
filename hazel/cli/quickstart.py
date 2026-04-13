@@ -37,60 +37,63 @@ def _step_provider(config: Config) -> bool:
     """Configure the LLM provider. Returns False if the user cancelled."""
     q = _get_questionary()
 
-    console.print()
-    console.print(
-        Panel(
-            "[bold]Step 1 of 2 — LLM Provider[/bold]\n\n"
-            f"By default, Hazel uses [cyan]MiniMax (minimax-m2.7)[/cyan] — a powerful\n"
-            "and affordable model with a 200k context window.\n\n"
-            "You just need a MiniMax API key to get started.",
-            border_style="blue",
+    while True:
+        console.print()
+        console.print(
+            Panel(
+                "[bold]Step 1 of 2 — LLM Provider[/bold]\n\n"
+                f"By default, Hazel uses [cyan]MiniMax (minimax-m2.7)[/cyan] — a powerful\n"
+                "and affordable model with a 200k context window.\n\n"
+                "You just need a MiniMax API key to get started.",
+                border_style="blue",
+            )
         )
-    )
 
-    console.print()
-    console.print("[bold]How to get your MiniMax API key:[/bold]")
-    console.print("  1. Go to [cyan]https://www.minimaxi.com[/cyan]")
-    console.print("  2. Sign up or log in")
-    console.print("  3. Navigate to API Keys and create a new key")
-    console.print("  4. [yellow]Important:[/yellow] Add funds to your account for the API to work")
-    console.print()
+        console.print()
+        console.print("[bold]How to get your MiniMax API key:[/bold]")
+        console.print("  1. Go to [cyan]https://www.minimaxi.com[/cyan]")
+        console.print("  2. Sign up or log in")
+        console.print("  3. Navigate to API Keys and create a new key")
+        console.print("  4. [yellow]Important:[/yellow] Add funds to your account for the API to work")
+        console.print()
 
-    choice = q.select(
-        "How would you like to set up your LLM?",
-        choices=[
-            "Enter MiniMax API key (recommended)",
-            "Advanced — choose a different provider",
-        ],
-        default="Enter MiniMax API key (recommended)",
-        qmark=">",
-    ).ask()
+        choice = q.select(
+            "How would you like to set up your LLM?",
+            choices=[
+                "Enter MiniMax API key (recommended)",
+                "Advanced — choose a different provider",
+            ],
+            default="Enter MiniMax API key (recommended)",
+            qmark=">",
+        ).ask()
 
-    if choice is None:
-        return False
+        if choice is None:
+            return False
 
-    if "Advanced" in choice:
-        return _step_provider_advanced(config)
+        if "Advanced" in choice:
+            _step_provider_advanced(config)
+            # Loop back to the provider choice so user can pick MiniMax or go advanced again
+            continue
 
-    # Simple path: just get the API key
-    api_key = q.password("MiniMax API key:", qmark=">").ask()
-    if api_key is None or api_key.strip() == "":
-        console.print("[yellow]No API key entered. You can add it later in your config.[/yellow]")
-    else:
-        config.providers.minimax.api_key = api_key.strip()
+        # Simple path: just get the API key
+        api_key = q.password("MiniMax API key:", qmark=">").ask()
+        if api_key is None or api_key.strip() == "":
+            console.print("[yellow]No API key entered. You can add it later in your config.[/yellow]")
+        else:
+            config.providers.minimax.api_key = api_key.strip()
 
-    # Set Minimax defaults
-    config.agents.defaults.model = _DEFAULT_MODEL
-    config.agents.defaults.provider = _DEFAULT_PROVIDER
-    config.agents.defaults.max_tokens = _DEFAULT_MAX_TOKENS
-    config.agents.defaults.context_window_tokens = _DEFAULT_CONTEXT_WINDOW
-    config.agents.defaults.max_tool_iterations = _DEFAULT_MAX_TOOL_ITERATIONS
+        # Set Minimax defaults
+        config.agents.defaults.model = _DEFAULT_MODEL
+        config.agents.defaults.provider = _DEFAULT_PROVIDER
+        config.agents.defaults.max_tokens = _DEFAULT_MAX_TOKENS
+        config.agents.defaults.context_window_tokens = _DEFAULT_CONTEXT_WINDOW
+        config.agents.defaults.max_tool_iterations = _DEFAULT_MAX_TOOL_ITERATIONS
 
-    console.print("[green]✓[/green] LLM provider configured")
-    return True
+        console.print("[green]✓[/green] LLM provider configured")
+        return True
 
 
-def _step_provider_advanced(config: Config) -> bool:
+def _step_provider_advanced(config: Config) -> None:
     """Fall back to the full wizard for provider + agent config."""
     from hazel.cli.onboard_wizard import _configure_general_settings, _configure_providers
 
@@ -98,14 +101,19 @@ def _step_provider_advanced(config: Config) -> bool:
     console.print("[dim]Opening full provider setup...[/dim]")
     _configure_providers(config)
     _configure_general_settings(config, "Agent Settings")
-    return True
 
 
 # ── Step 2: Channel (Telegram) ─────────────────────────────────────────────
 
 
-def _step_channel(config: Config) -> bool:
-    """Configure a chat channel. Returns False if the user cancelled."""
+_GO_BACK = "go_back"
+
+
+def _step_channel(config: Config) -> bool | str:
+    """Configure a chat channel.
+
+    Returns True on success, False if cancelled, or _GO_BACK to return to step 1.
+    """
     q = _get_questionary()
 
     console.print()
@@ -131,6 +139,7 @@ def _step_channel(config: Config) -> bool:
             "Enter Telegram bot token (recommended)",
             "Advanced — choose a different channel",
             "Skip — I'll set this up later",
+            "<- Back to LLM provider setup",
         ],
         default="Enter Telegram bot token (recommended)",
         qmark=">",
@@ -138,6 +147,9 @@ def _step_channel(config: Config) -> bool:
 
     if choice is None:
         return False
+
+    if "<- Back" in choice:
+        return _GO_BACK
 
     if "Advanced" in choice:
         return _step_channel_advanced(config)
@@ -199,18 +211,68 @@ def _step_channel_advanced(config: Config) -> bool:
 # ── Main entry point ───────────────────────────────────────────────────────
 
 
+def _save_pending_instructions(path, instructions: str) -> None:
+    """Save setup instructions to a pending file for later use."""
+    from pathlib import Path
+
+    Path(path).write_text(instructions, encoding="utf-8")
+
+
+def _clear_pending_instructions(path) -> None:
+    """Remove a pending setup instructions file after successful execution."""
+    from pathlib import Path
+
+    p = Path(path)
+    if p.exists():
+        p.unlink()
+
+
 def _step_setup_skills(config: Config, auto_instructions: str | None = None) -> None:
     """Optionally run pasted setup instructions through the agent.
 
     If *auto_instructions* is provided (from a setup config token),
-    they are fed directly without prompting.
+    the user is offered to run them now or save for later.
     """
     from hazel.cli.commands import _run_setup_skills
+    from hazel.config.paths import get_pending_setup_skills_path
+
+    pending_path = get_pending_setup_skills_path()
 
     if auto_instructions:
+        # Always save so the user can run later if they skip
+        _save_pending_instructions(pending_path, auto_instructions)
+
+        q = _get_questionary()
         console.print()
-        console.print("[green]✓[/green] Running skills setup from config...")
+        console.print(
+            Panel(
+                "[bold]Setup Skills[/bold]\n\n"
+                "Your install config includes skills setup instructions.\n"
+                "Hazel can run them now to install skills and configure\n"
+                "your workspace.",
+                border_style="blue",
+            )
+        )
+
+        console.print()
+        choice = q.select(
+            "Run skills setup now?",
+            choices=[
+                "Yes — run skills setup now",
+                "Skip — I'll do this later with: hazel setup-skills",
+            ],
+            default="Yes — run skills setup now",
+            qmark=">",
+        ).ask()
+
+        if choice is None or "Skip" in choice:
+            console.print("[dim]Skills setup instructions saved. Run later with: [cyan]hazel setup-skills[/cyan][/dim]")
+            return
+
+        console.print()
+        console.print("[dim]Running skills setup...[/dim]")
         _run_setup_skills(config, auto_instructions)
+        _clear_pending_instructions(pending_path)
         return
 
     q = _get_questionary()
@@ -256,6 +318,15 @@ def run_quickstart(config: Config) -> tuple[Config, bool]:
 
     Returns (config, should_save) tuple.
     """
+    import sys
+
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            "Quickstart requires an interactive terminal.\n"
+            "If you're running via a piped install script, try:\n"
+            "  hazel quickstart"
+        )
+
     from hazel import __logo__, __version__
 
     console.print()
@@ -269,15 +340,22 @@ def run_quickstart(config: Config) -> tuple[Config, bool]:
         )
     )
 
-    # Step 1: Provider
-    if not _step_provider(config):
-        console.print("[yellow]Setup cancelled.[/yellow]")
-        return config, False
-
-    # Step 2: Channel
-    if not _step_channel(config):
-        console.print("[yellow]Setup cancelled.[/yellow]")
-        return config, False
+    step = 1
+    while step <= 2:
+        if step == 1:
+            if not _step_provider(config):
+                console.print("[yellow]Setup cancelled.[/yellow]")
+                return config, False
+            step = 2
+        elif step == 2:
+            result = _step_channel(config)
+            if result == _GO_BACK:
+                step = 1
+                continue
+            if not result:
+                console.print("[yellow]Setup cancelled.[/yellow]")
+                return config, False
+            step = 3  # done
 
     # Done with core setup — save first so setup-skills has a working provider
     console.print()
@@ -297,14 +375,48 @@ def _step_setup_user_actions(config: Config, auto_instructions: str | None = Non
     """Optionally run an interactive setup session for user actions.
 
     If *auto_instructions* is provided (from a setup config token),
-    they are fed directly without prompting.
+    the user is offered to run them now or save for later.
     """
     from hazel.cli.commands import _run_setup_user_actions
+    from hazel.config.paths import get_pending_setup_user_actions_path
+
+    pending_path = get_pending_setup_user_actions_path()
 
     if auto_instructions:
+        # Always save so the user can run later if they skip
+        _save_pending_instructions(pending_path, auto_instructions)
+
+        q = _get_questionary()
         console.print()
-        console.print("[green]✓[/green] Running user actions setup from config...")
+        console.print(
+            Panel(
+                "[bold]Setup User Actions[/bold]\n\n"
+                "Your install config includes user action instructions.\n"
+                "Hazel can run an interactive setup session now to\n"
+                "configure your actions, workflows, and automations.",
+                border_style="blue",
+            )
+        )
+
+        console.print()
+        choice = q.select(
+            "Run user actions setup now?",
+            choices=[
+                "Yes — run user actions setup now",
+                "Skip — I'll do this later with: hazel setup-user-actions",
+            ],
+            default="Yes — run user actions setup now",
+            qmark=">",
+        ).ask()
+
+        if choice is None or "Skip" in choice:
+            console.print("[dim]User actions instructions saved. Run later with: [cyan]hazel setup-user-actions[/cyan][/dim]")
+            return
+
+        console.print()
+        console.print("[dim]Starting user actions setup...[/dim]")
         _run_setup_user_actions(config, auto_instructions)
+        _clear_pending_instructions(pending_path)
         return
 
     q = _get_questionary()

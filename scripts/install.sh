@@ -276,7 +276,7 @@ main() {
     if [[ -n "$SETUP_CONFIG_TOKEN" ]]; then
         info "Setup config token detected. Starting quickstart with config..."
         echo ""
-        hazel quickstart --setup-config "$SETUP_CONFIG_TOKEN"
+        hazel quickstart --setup-config "$SETUP_CONFIG_TOKEN" </dev/tty
     else
         info "Get started (recommended):"
         echo ""
