@@ -247,15 +247,16 @@ main() {
 
     echo ""
     echo "---------------------------------------"
-    info "Run this next to set up Hazel:"
+    info "Get started (recommended):"
+    echo ""
+    echo "  hazel quickstart"
+    echo ""
+    echo "Sets you up with sensible defaults in under 2 minutes."
+    echo "Just bring your API key and a Telegram bot token."
+    echo ""
+    echo "For full control over every setting, run:"
     echo ""
     echo "  hazel onboard --wizard"
-    echo ""
-    echo "The wizard walks you through configuring your"
-    echo "API key, model, and chat channels. Then:"
-    echo ""
-    echo "  hazel agent       # interactive chat"
-    echo "  hazel gateway     # start the always-on daemon"
     echo ""
 }
 

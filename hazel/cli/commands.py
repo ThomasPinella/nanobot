@@ -357,6 +357,73 @@ def onboard(
     console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/hazel#-chat-apps[/dim]")
 
 
+@app.command()
+def quickstart(
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
+):
+    """Get Hazel running in 2 minutes with sensible defaults."""
+    from hazel.cli.quickstart import run_quickstart
+    from hazel.config.loader import get_config_path, load_config, save_config, set_config_path
+
+    if config:
+        config_path = Path(config).expanduser().resolve()
+        set_config_path(config_path)
+        console.print(f"[dim]Using config: {config_path}[/dim]")
+    else:
+        config_path = get_config_path()
+
+    # Load existing or create fresh config
+    if config_path.exists():
+        cfg = load_config(config_path)
+    else:
+        cfg = Config()
+
+    if workspace:
+        cfg.agents.defaults.workspace = workspace
+
+    try:
+        cfg, should_save = run_quickstart(cfg)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error during quickstart: {e}")
+        raise typer.Exit(1)
+
+    if not should_save:
+        console.print("[yellow]No changes saved.[/yellow]")
+        raise typer.Exit()
+
+    save_config(cfg, config_path)
+    console.print(f"[green]✓[/green] Config saved at {config_path}")
+
+    _onboard_plugins(config_path)
+
+    # Create workspace
+    workspace_path = get_workspace_path(cfg.workspace_path)
+    if not workspace_path.exists():
+        workspace_path.mkdir(parents=True, exist_ok=True)
+        console.print(f"[green]✓[/green] Created workspace at {workspace_path}")
+
+    sync_workspace_templates(workspace_path)
+
+    # Dashboard setup
+    _setup_dashboard(cfg)
+
+    agent_cmd = 'hazel agent -m "Hello!"'
+    gateway_cmd = "hazel gateway"
+    if config:
+        agent_cmd += f" --config {config_path}"
+        gateway_cmd += f" --config {config_path}"
+
+    console.print(f"\n{__logo__} Hazel is ready!")
+    console.print("\nNext steps:")
+    console.print(f"  1. Chat: [cyan]{agent_cmd}[/cyan]")
+    console.print(f"  2. Start gateway: [cyan]{gateway_cmd}[/cyan]")
+
+    dashboard_cfg = cfg.gateway.dashboard
+    if dashboard_cfg.enabled:
+        console.print(f"\n  Dashboard: [cyan]http://{dashboard_cfg.host}:{dashboard_cfg.port}[/cyan]")
+
+
 def _merge_missing_defaults(existing: Any, defaults: Any) -> Any:
     """Recursively fill in missing values from defaults without overwriting user config."""
     if not isinstance(existing, dict) or not isinstance(defaults, dict):
