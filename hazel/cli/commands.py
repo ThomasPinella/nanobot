@@ -417,6 +417,24 @@ def quickstart(
     if setup_config:
         setup_config_data = _fetch_setup_config(setup_config)
 
+    # Persist setup-config payloads to pending files NOW, before the
+    # interactive quickstart flow which can crash (e.g. terminal issues in
+    # curl|bash installs).  This guarantees that `hazel setup-skills` and
+    # `hazel setup-user-actions` can pick them up even if quickstart fails.
+    if setup_config_data:
+        from hazel.cli.quickstart import _save_pending_instructions
+        from hazel.config.paths import (
+            get_pending_setup_skills_path,
+            get_pending_setup_user_actions_path,
+        )
+
+        skills_payload = setup_config_data.get("skillsSetup") or ""
+        actions_payload = setup_config_data.get("userActions") or ""
+        if skills_payload.strip():
+            _save_pending_instructions(get_pending_setup_skills_path(), skills_payload)
+        if actions_payload.strip():
+            _save_pending_instructions(get_pending_setup_user_actions_path(), actions_payload)
+
     # Load existing or create fresh config
     if config_path.exists():
         cfg = load_config(config_path)
@@ -430,6 +448,13 @@ def quickstart(
         cfg, should_save = run_quickstart(cfg)
     except Exception as e:
         console.print(f"[red]✗[/red] Error during quickstart: {e}")
+        if setup_config_data:
+            console.print(
+                "[yellow]Your setup config was saved. "
+                "After fixing the issue, run:[/yellow]\n"
+                "  [cyan]hazel setup-skills[/cyan]\n"
+                "  [cyan]hazel setup-user-actions[/cyan]"
+            )
         raise typer.Exit(1)
 
     if not should_save:

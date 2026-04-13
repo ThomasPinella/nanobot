@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from getpass import getpass
+
 from rich.console import Console
 from rich.panel import Panel
 
@@ -17,17 +20,107 @@ _DEFAULT_CONTEXT_WINDOW = 204_800
 _DEFAULT_MAX_TOOL_ITERATIONS = 100
 _DEFAULT_PROVIDER = "minimax"
 
+# ── Terminal-safe input helpers ─────────────────────────────────────────────
+# prompt_toolkit (used by questionary) calls termios.tcsetattr() to enter raw
+# mode.  When stdin is a /dev/tty redirect inside a `curl | bash` pipe, that
+# syscall can fail with EINVAL.  We detect this upfront and fall back to plain
+# input()/getpass() so the install flow doesn't crash.
+
+_USE_FALLBACK: bool | None = None  # lazy-init
+
+
+def _should_use_fallback() -> bool:
+    """Return True if prompt_toolkit terminal ops will fail."""
+    global _USE_FALLBACK
+    if _USE_FALLBACK is not None:
+        return _USE_FALLBACK
+    try:
+        import termios
+
+        termios.tcgetattr(sys.stdin.fileno())
+        _USE_FALLBACK = False
+    except Exception:
+        _USE_FALLBACK = True
+    return _USE_FALLBACK
+
+
+# ── Fallback prompt objects (same call pattern as questionary) ──────────────
+
+
+class _FallbackResult:
+    """Wraps a callable so `.ask()` mirrors questionary's API."""
+
+    def __init__(self, fn, *args, **kwargs):
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs
+
+    def ask(self):
+        return self._fn(*self._args, **self._kwargs)
+
+
+class _FallbackInput:
+    """Drop-in replacement for questionary when prompt_toolkit is broken."""
+
+    def select(self, message, choices, default=None, **_kw):
+        def _ask():
+            console.print(f"[bold]{message}[/bold]")
+            for i, c in enumerate(choices, 1):
+                marker = " [cyan](default)[/cyan]" if c == default else ""
+                console.print(f"  {i}. {c}{marker}")
+            while True:
+                raw = input(f"Enter choice [1-{len(choices)}] (default 1): ").strip()
+                if raw == "":
+                    return choices[0] if default is None else default
+                try:
+                    idx = int(raw)
+                    if 1 <= idx <= len(choices):
+                        return choices[idx - 1]
+                except ValueError:
+                    pass
+                console.print(f"[yellow]Please enter a number between 1 and {len(choices)}[/yellow]")
+
+        return _FallbackResult(_ask)
+
+    def password(self, message, **_kw):
+        return _FallbackResult(lambda: getpass(f"{message} "))
+
+    def text(self, message, default="", **_kw):
+        def _ask():
+            suffix = f" [{default}]" if default else ""
+            raw = input(f"{message}{suffix} ").strip()
+            return raw if raw else default
+
+        return _FallbackResult(_ask)
+
+    def confirm(self, message, default=False, **_kw):
+        def _ask():
+            hint = "Y/n" if default else "y/N"
+            raw = input(f"{message} ({hint}): ").strip().lower()
+            if raw == "":
+                return default
+            return raw in ("y", "yes")
+
+        return _FallbackResult(_ask)
+
 
 def _get_questionary():
-    """Return questionary or raise a clear error."""
+    """Return questionary or a plain-input fallback if the terminal can't
+    support prompt_toolkit's raw-mode operations."""
+    if _should_use_fallback():
+        return _FallbackInput()
     try:
         import questionary
-    except ModuleNotFoundError:
-        raise RuntimeError(
-            "Quickstart requires the 'questionary' dependency. "
-            "Install with: pip install hazel-ai[wizard]"
-        )
-    return questionary
+
+        # Smoke-test: make sure prompt_toolkit can actually init the terminal.
+        # Some environments pass isatty() but fail on tcsetattr().
+        from prompt_toolkit.input import create_input
+
+        inp = create_input()
+        inp.fileno()  # forces FD resolution — raises on bad terminals
+        return questionary
+    except Exception:
+        return _FallbackInput()
 
 
 # ── Step 1: LLM Provider ───────────────────────────────────────────────────
@@ -318,8 +411,6 @@ def run_quickstart(config: Config) -> tuple[Config, bool]:
 
     Returns (config, should_save) tuple.
     """
-    import sys
-
     if not sys.stdin.isatty():
         raise RuntimeError(
             "Quickstart requires an interactive terminal.\n"
