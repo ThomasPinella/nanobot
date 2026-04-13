@@ -379,3 +379,5 @@ The workflow will:
 - Attach the `.whl` and `.tar.gz` to the release
 
 Tag format: `v{version}` (e.g. `v0.1.5.post9`). The workflow is idempotent — re-running on the same tag will overwrite artifacts without error.
+
+**Important:** Always `git push` the commit *before* pushing the tag. If you push the tag first, the workflow checks out a commit that may not exist on the remote yet, and the wheel build will fail or produce stale artifacts.
