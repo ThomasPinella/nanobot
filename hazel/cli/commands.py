@@ -32,6 +32,7 @@ from rich.table import Table
 from rich.text import Text
 
 from hazel import __logo__, __version__
+from hazel.agent.tools.base import Tool
 from hazel.config.paths import get_workspace_path
 from hazel.config.schema import Config
 from hazel.utils.helpers import sync_workspace_templates
@@ -551,6 +552,97 @@ def _strip_completion_marker(text: str) -> tuple[str, bool]:
     return text, False
 
 
+# ── queue_user_action tool (live only during setup-skills) ──────────────────
+
+
+class QueueUserActionTool(Tool):
+    """Tool the agent calls during setup-skills to append a newly-required
+    user-action (e.g. account auth for a skill it just installed) to the
+    pending user-actions file.  The user will run those later via
+    `hazel setup-user-actions`."""
+
+    def __init__(self, pending_path: Path):
+        self._pending_path = pending_path
+
+    @property
+    def name(self) -> str:
+        return "queue_user_action"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Append a new user-action to the pending user-actions file. "
+            "Use this when a skill you just installed requires account auth, "
+            "API credentials, or other interactive setup that the user should "
+            "complete later via `hazel setup-user-actions`. Do NOT use for "
+            "things you can handle yourself with the exec/write_file tools."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Short title for the action, e.g. "
+                        "'Authenticate Gmail', 'Set ANTHROPIC_API_KEY'."
+                    ),
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Clear step-by-step instructions for the user. "
+                        "Explain what they need to do, why, and include any "
+                        "commands or URLs they'll need."
+                    ),
+                },
+                "skill": {
+                    "type": "string",
+                    "description": (
+                        "Which skill this action is for (so the user knows "
+                        "why they're doing it). Optional."
+                    ),
+                },
+            },
+            "required": ["title", "description"],
+        }
+
+    async def execute(self, title: str, description: str,
+                      skill: str | None = None, **_kw: Any) -> str:
+        self._pending_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = ""
+        if self._pending_path.exists():
+            existing = self._pending_path.read_text(encoding="utf-8")
+
+        # Avoid exact-title duplicates.
+        if f"## {title}" in existing:
+            return f"Skipped: '{title}' already queued."
+
+        entry_lines = [f"## {title}"]
+        if skill:
+            entry_lines.append(f"_Required by skill: {skill}_")
+        entry_lines.append("")
+        entry_lines.append(description.strip())
+        entry_lines.append("")
+        entry = "\n".join(entry_lines)
+
+        # Seed a header the first time we write anything substantive.
+        if not existing.strip():
+            existing = (
+                "# Pending User Actions\n\n"
+                "These were queued during skill setup and need your attention.\n"
+                "Run `hazel setup-user-actions` to work through them.\n\n"
+            )
+
+        new_content = existing.rstrip() + "\n\n" + entry + "\n"
+        self._pending_path.write_text(new_content, encoding="utf-8")
+        return f"Queued user-action: {title}"
+
+
 def _run_setup_skills(cfg: Config, instructions: str) -> None:
     """Run setup skills as an interactive dialogue.
 
@@ -589,6 +681,12 @@ def _run_setup_skills(cfg: Config, instructions: str) -> None:
         dashboard_config=cfg.gateway.dashboard,
     )
 
+    # Register the session-local queue_user_action tool so the agent can
+    # add auth/account-related follow-ups that need to happen later.
+    from hazel.config.paths import get_pending_setup_user_actions_path
+    pending_actions_path = get_pending_setup_user_actions_path()
+    agent_loop.tools.register(QueueUserActionTool(pending_actions_path))
+
     context = agent_loop.context
     workspace_path = str(cfg.workspace_path.expanduser().resolve())
 
@@ -619,6 +717,18 @@ Your workspace is at: {workspace_path}
   interactive bits are handled in a separate step later.
 - Only stop to ask the user if a step is completely blocking AND you
   cannot find any reasonable way to proceed.
+
+## Queueing new user-actions
+Installing a skill may reveal new follow-ups the user has to handle
+manually later (OAuth, API keys, account linking, etc.).  When you
+discover one:
+- Call the `queue_user_action` tool with a clear title + step-by-step
+  description of what the user needs to do and why.
+- Include the skill name so the user knows which install triggered it.
+- Keep doing this throughout setup — one call per distinct action.
+The queued entries end up in a file that the user works through later
+via `hazel setup-user-actions`.  Do not queue things you can handle
+yourself with exec/write_file.
 
 ## How to finish
 When you have executed every step you reasonably can:
